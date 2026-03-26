@@ -12,7 +12,7 @@ When the LLM encounters a subjective decision point (e.g., determining which fea
 
 ### How it Works:
 1. The LLM signals a tool call for `askUserForPreference` with a dynamically generated question and options.
-2. The server intercepts the execution and streams this tool call to the client via the SDK Generic Data Protocol.
-3. The frontend `MessageItem` intercepts the `call` state and renders the `HumanInteractionForm`.
+2. The server streams this tool call to the client via the **UI Message Stream Protocol** (using SSE JSON chunks).
+3. The frontend `MessageItem` iterates over `message.parts`, identifies the tool call, and renders the `HumanInteractionForm`.
 4. The main chat input is dynamically disabled to force the user to interact with the active form.
 5. Upon submission, the frontend calls `addToolResult()`, appending the user's answer to the conversation and resuming the LLM's generation loop to output the final recommendation.

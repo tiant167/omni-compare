@@ -9,19 +9,23 @@ import { MessageItem } from '@/components/chat/MessageItem';
 export default function Chat() {
   const [input, setInput] = useState('');
   const chatContext = useChat({
+    api: '/api/chat',
     maxSteps: 5,
   });
   
-  const { messages, addToolResult, isLoading } = chatContext;
+  const { messages, addToolResult, isLoading, error, append, sendMessage } = chatContext as any;
 
   const handleInputChange = (e: any) => setInput(e.target.value);
   const handleSubmit = (e: any) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
     
-    // @ts-ignore
-    const sendFn = chatContext.sendMessage || chatContext.append;
-    sendFn({ role: 'user', content: input });
+    const sendFn = append || sendMessage;
+    if (sendFn) {
+      sendFn({ role: 'user', content: input });
+    } else {
+       console.error('No append or sendMessage found in useChat!');
+    }
     setInput('');
   };
   
@@ -49,7 +53,13 @@ export default function Chat() {
           Agentic AI Engine
         </p>
       </header>
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
+          <strong>Error: </strong> {error.message || JSON.stringify(error)}
+        </div>
+      )}
       
+      <pre className="p-2 text-xs bg-gray-900 text-green-400 overflow-x-auto break-all w-full max-h-40 overflow-y-auto">{JSON.stringify(messages, null, 2)}</pre>
       <div className="flex-1 overflow-y-auto mb-6 pr-2 scroll-smooth">
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-center space-y-6 p-8">

@@ -1,7 +1,9 @@
 // @ts-nocheck
-import { google } from '@ai-sdk/google';
-import { streamText, tool } from 'ai';
-import { z } from 'zod';
+import { streamText, tool, convertToModelMessages } from 'ai';
+import { tavily } from '@tavily/core';
+
+// Initialize Tavily client
+const tvly = process.env.TAVILY_API_KEY ? tavily({ apiKey: process.env.TAVILY_API_KEY }) : null;
 
 export const maxDuration = 30;
 
@@ -16,9 +18,13 @@ export async function POST(req: Request) {
     // Simulate Vercel AI SDK Data Stream Protocol v1
     const stream = new ReadableStream({
       start(controller) {
+        controller.enqueue('data: {"type":"start","messageId":"msg_mock"}\n\n');
         if (!isToolResult) {
-          controller.enqueue('0:"I will help you compare these. First, let me check your preferences.\\n\\n"\\n');
-          controller.enqueue('9:[{"callId":"call_mock_123","toolName":"askUserForPreference","args":{"question":"What matters most to you in this comparison?","options":["Performance","Battery Life","Price"]}}]\\n');
+          controller.enqueue('data: {"type":"text-start","id":"txt1"}\n\n');
+          controller.enqueue('data: {"type":"text-delta","id":"txt1","delta":"I will help you compare these. First, let me check your preferences.\\n\\n"}\n\n');
+          controller.enqueue('data: {"type":"text-end","id":"txt1"}\n\n');
+          controller.enqueue('data: {"type":"tool-input-start","toolCallId":"call_mock_123","toolName":"askUserForPreference"}\n\n');
+          controller.enqueue('data: {"type":"tool-input-available","toolCallId":"call_mock_123","toolName":"askUserForPreference","input":{"question":"What matters most to you in this comparison?","options":["Performance","Battery Life","Price"]}}\n\n');
         } else {
           // Find the tool result answer safely
           let answer = 'custom';
@@ -30,12 +36,15 @@ export async function POST(req: Request) {
             }
           } catch (e) {}
           
-          controller.enqueue(`0:"Based on your preference for \\"${answer}\\", the clear winner is Option A because it provides the best balance of your desired features!"\\n`);
+          controller.enqueue(`data: {"type":"text-start","id":"txt2"}\n\n`);
+          controller.enqueue(`data: {"type":"text-delta","id":"txt2","delta":"Based on your preference for ${answer}, the clear winner is Option A because it provides the best balance of your desired features!"}\n\n`);
+          controller.enqueue(`data: {"type":"text-end","id":"txt2"}\n\n`);
         }
+        controller.enqueue(`data: {"type":"finish"}\n\n`);
         controller.close();
       }
     });
-    return new Response(stream, { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'x-vercel-ai-data-stream': 'v1' } });
+    return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'x-vercel-ai-ui-message-stream': 'v1' } });
   }
 
   const result = streamText({
@@ -44,11 +53,28 @@ export async function POST(req: Request) {
     system: `You are Omni-Compare, an advanced AI agent designed to help users compare any two things and make optimal decisions.`,
     tools: {
       webSearch: tool({
-        description: 'Search the web for information using DuckDuckGo mock (fallback) or Tavily if available.',
+        description: 'Search the web for up-to-date information.',
         parameters: z.object({
           query: z.string().describe('The search query'),
         }),
-        execute: async ({ query }) => ({ query, results: [{ title: `Mock Result for ${query}`, snippet: `This is mocked data.` }] }),
+        execute: async ({ query }) => {
+          if (!tvly) {
+            console.warn('TAVILY_API_KEY is not set. Using mock search results.');
+            return { query, results: [{ title: `Mock Result for ${query}`, snippet: `This is mocked data. Please configure TAVILY_API_KEY for live web results.` }] };
+          }
+          
+          try {
+            console.log(`[Tavily] Searching for: ${query}`);
+            const response = await tvly.search(query, {
+              searchDepth: 'basic',
+              maxResults: 5,
+            });
+            return { query, results: response.results };
+          } catch (error) {
+            console.error('Tavily search error:', error);
+            return { query, error: 'Web search failed. Proceed with general knowledge.' };
+          }
+        },
       }),
       askUserForPreference: tool({
         description: 'Ask the user for their preference to guide the comparison and decision.',
@@ -60,5 +86,6 @@ export async function POST(req: Request) {
     },
   });
 
-  return result.toDataStreamResponse?.() ?? result.toAIStreamResponse?.() ?? new Response(result.textStream, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  // @ts-ignore
+  return result.toUIMessageStreamResponse?.() ?? result.toDataStreamResponse?.();
 }
