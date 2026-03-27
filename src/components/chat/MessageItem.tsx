@@ -84,7 +84,6 @@ export function MessageItem({ message, addToolResult }: { message: Message, addT
               </div>
             );
           }
-          return null;
         })}
       </div>
     </div>

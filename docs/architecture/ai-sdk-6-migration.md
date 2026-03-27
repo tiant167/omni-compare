@@ -64,7 +64,33 @@ If you need to mock the backend without an LLM (e.g., for UI testing), your `Rea
 > [!WARNING]
 > Missing any of these steps (especially `type: start`) will cause `useChat` to ignore the stream entirely.
 
-## 5. Key API Changes
-- **Backend:** Use `convertToModelMessages(messages)` instead of passing the raw array to `streamText`.
-- **Backend:** Prefer `result.toUIMessageStreamResponse()` for the highest compatibility with the v6 protocol.
-- **Frontend:** `useChat` no longer automatically maps all data to `content`; use `parts` for the most accurate state.
+## 6. Model Naming & Provider Versioning (Google)
+
+In SDK 6.0, model naming conventions for Google Generative AI are strict but often inconsistent across documentation. 
+
+### The Gemini Trap
+- **Recommended Model:** `gemini-3.1-pro-preview` is currently optimized for agentic and tool-calling workflows.
+- **Common Error:** Using `gemini-1.5-pro` or `gemini-1.5-pro-latest` may result in `models/gemini-1.5-pro is not found for API version v1beta` errors if the provider is defaulting to a specific version.
+- **Solution:** Always use the latest preview strings confirmed in the [Google Generative AI Documentation](https://ai-sdk.dev/providers/ai-sdk-providers/google-generative-ai#model-capabilities).
+
+## 7. Critical: Manual Message Mapping for Tool Results
+
+If using a manual mapping function for `CoreMessage` (mandatory in some beta versions of v6 to ensure stability), you **must** explicitly map the `role: 'tool'` (tool outputs).
+
+### The Missing Chain Breakdown
+If you only map `user` and `assistant` roles, the model will successfully call a tool (e.g., Search), but it will **never see the results** of that search. It will appear to "hang" or stop after the tool call.
+
+```typescript
+// Correct Mapping for Tool Results
+if (msg.role === 'tool') {
+  return {
+    role: 'tool',
+    content: msg.content.map(c => ({
+      type: 'tool-result',
+      toolCallId: c.toolCallId,
+      toolName: c.toolName,
+      result: c.result,
+    })),
+  };
+}
+```
